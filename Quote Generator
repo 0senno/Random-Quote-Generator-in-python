@@ -1,0 +1,256 @@
+import customtkinter as ctk
+import requests
+import random
+import os
+import json
+import datetime
+import pyperclip
+from tkinter import messagebox
+
+# Ensure pyperclip is installed. If not, install it using pip:
+# pip install pyperclip
+
+class QuoteGeneratorApp:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("Random Quote Generator")
+        self.master.geometry("800x600")
+        self.master.resizable(False, False)
+
+        # Initialize themes
+        ctk.set_appearance_mode("System")  
+        ctk.set_default_color_theme("blue")  
+
+        # Initialize data
+        self.quotes = self.fetch_quotes('https://raw.githubusercontent.com/dwyl/quotes/main/quotes.json')
+        self.favorites_file = "favorites.json"
+        self.favorites = self.load_favorites()
+        self.quote_history = []
+        self.history_index = -1
+        self.quote_of_the_day = self.get_quote_of_the_day()
+
+        # Setup UI
+        self.setup_ui()
+
+    def fetch_quotes(self, url):
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Error", f"Failed to fetch quotes:\n{e}")
+            self.master.destroy()
+
+    def load_favorites(self):
+        if os.path.exists(self.favorites_file):
+            try:
+                with open(self.favorites_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except json.JSONDecodeError:
+                return []
+        return []
+
+    def save_favorites(self):
+        try:
+            with open(self.favorites_file, "w", encoding="utf-8") as f:
+                json.dump(self.favorites, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save favorites:\n{e}")
+
+    def get_quote_of_the_day(self):
+        today = datetime.date.today()
+        quote_index_file = "quote_of_the_day.json"
+        if os.path.exists(quote_index_file):
+            try:
+                with open(quote_index_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data["date"] == str(today):
+                    return self.quotes[data["index"]]
+            except (json.JSONDecodeError, KeyError):
+                pass
+        index = random.randint(0, len(self.quotes) - 1)
+        with open(quote_index_file, "w", encoding="utf-8") as f:
+            json.dump({"date": str(today), "index": index}, f)
+        return self.quotes[index]
+
+    def setup_ui(self):
+        # Top Frame: Title and Theme Toggle
+        top_frame = ctk.CTkFrame(self.master, height=60)
+        top_frame.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkLabel(top_frame, text="Random Quote Generator", font=("Helvetica", 24)).pack(side="left", padx=10)
+
+        self.theme_toggle = ctk.CTkSwitch(top_frame, text="Dark Mode", command=self.toggle_theme)
+        self.theme_toggle.pack(side="right", padx=10)
+
+        # Middle Frame: Quote Display
+        middle_frame = ctk.CTkFrame(self.master)
+        middle_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.quote_display = ctk.CTkTextbox(middle_frame, wrap="word", font=("Helvetica", 16), state="disabled")
+        self.quote_display.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Bottom Frame: Controls
+        bottom_frame = ctk.CTkFrame(self.master, height=150)
+        bottom_frame.pack(fill="x", padx=10, pady=10)
+
+        # Author Filter
+        authors = sorted(list(set([quote['author'] for quote in self.quotes if quote['author']])))
+        authors.insert(0, "All Authors")
+        ctk.CTkLabel(bottom_frame, text="Author:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        self.author_combo = ctk.CTkComboBox(bottom_frame, values=authors, width=200)
+        self.author_combo.set("All Authors")
+        self.author_combo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+        # Search Bar
+        ctk.CTkLabel(bottom_frame, text="Search:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+        self.search_entry = ctk.CTkEntry(bottom_frame, width=200)
+        self.search_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
+        # Buttons
+        button_frame = ctk.CTkFrame(bottom_frame)
+        button_frame.grid(row=0, column=2, rowspan=2, padx=20, pady=5)
+
+        self.random_button = ctk.CTkButton(button_frame, text="Random Quote", command=self.show_random_quote)
+        self.random_button.grid(row=0, column=0, padx=5, pady=5)
+
+        self.search_button = ctk.CTkButton(button_frame, text="Search", command=self.search_quotes)
+        self.search_button.grid(row=1, column=0, padx=5, pady=5)
+
+        self.copy_button = ctk.CTkButton(button_frame, text="Copy to Clipboard", command=self.copy_quote)
+        self.copy_button.grid(row=2, column=0, padx=5, pady=5)
+
+        self.favorite_button = ctk.CTkButton(button_frame, text="Add to Favorites", command=self.add_favorite)
+        self.favorite_button.grid(row=3, column=0, padx=5, pady=5)
+
+        self.view_favorites_button = ctk.CTkButton(button_frame, text="View Favorites", command=self.view_favorites)
+        self.view_favorites_button.grid(row=4, column=0, padx=5, pady=5)
+
+        self.exit_button = ctk.CTkButton(button_frame, text="Exit", command=self.master.destroy)
+        self.exit_button.grid(row=5, column=0, padx=5, pady=5)
+
+        # Navigation Buttons
+        nav_frame = ctk.CTkFrame(bottom_frame)
+        nav_frame.grid(row=0, column=3, rowspan=2, padx=20, pady=5)
+
+        self.prev_button = ctk.CTkButton(nav_frame, text="Previous", command=self.show_previous_quote)
+        self.prev_button.grid(row=0, column=0, padx=5, pady=5)
+
+        self.next_button = ctk.CTkButton(nav_frame, text="Next", command=self.show_next_quote)
+        self.next_button.grid(row=1, column=0, padx=5, pady=5)
+
+        # Watermark
+        watermark_label = ctk.CTkLabel(self.master, text="made by 0sen", font=("Helvetica", 8), text_color="grey")
+        watermark_label.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-10)
+
+        # Display Quote of the Day on Startup
+        self.display_quote(self.quote_of_the_day)
+        self.quote_history.append(self.quote_of_the_day)
+        self.history_index = 0
+
+    def toggle_theme(self):
+        current_mode = ctk.get_appearance_mode()
+        new_mode = "Dark" if current_mode == "Light" else "Light"
+        ctk.set_appearance_mode(new_mode)
+
+    def display_quote(self, quote):
+        formatted_quote = f'"{quote["text"]}"\n\n– {quote["author"]}'
+        self.quote_display.configure(state="normal")
+        self.quote_display.delete("1.0", ctk.END)
+        self.quote_display.insert(ctk.END, formatted_quote)
+        self.quote_display.configure(state="disabled")
+
+    def show_random_quote(self):
+        quote = random.choice(self.quotes)
+        self.display_quote(quote)
+        self.update_history(quote)
+
+    def search_quotes(self):
+        keyword = self.search_entry.get().strip().lower()
+        author = self.author_combo.get()
+        if not keyword and author == "All Authors":
+            messagebox.showwarning("Warning", "Please enter a keyword or select an author to search.")
+            return
+        filtered = self.quotes
+        if author != "All Authors":
+            filtered = [q for q in filtered if q['author'] == author]
+        if keyword:
+            filtered = [q for q in filtered if keyword in q['text'].lower()]
+        if not filtered:
+            messagebox.showinfo("Info", "No quotes found matching the criteria.")
+            return
+        quote = random.choice(filtered)
+        self.display_quote(quote)
+        self.update_history(quote)
+
+    def add_favorite(self):
+        current_quote = self.quote_display.get("1.0", ctk.END).strip()
+        if not current_quote:
+            messagebox.showwarning("Warning", "No quote to add to favorites.")
+            return
+        if current_quote in self.favorites:
+            messagebox.showinfo("Info", "Quote is already in favorites.")
+            return
+        self.favorites.append(current_quote)
+        self.save_favorites()
+        messagebox.showinfo("Success", "Quote added to favorites!")
+
+    def view_favorites(self):
+        if not self.favorites:
+            messagebox.showinfo("Info", "No favorites yet.")
+            return
+        fav_window = ctk.CTkToplevel(self.master)
+        fav_window.title("Favorite Quotes")
+        fav_window.geometry("600x500")
+        fav_window.resizable(False, False)
+
+        fav_frame = ctk.CTkFrame(fav_window)
+        fav_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        fav_text = ctk.CTkTextbox(fav_frame, wrap="word", font=("Helvetica", 14), state="disabled")
+        fav_text.pack(fill="both", expand=True)
+
+        fav_text.configure(state="normal")
+        for quote in self.favorites:
+            fav_text.insert(ctk.END, quote + "\n\n")
+        fav_text.configure(state="disabled")
+
+        save_button = ctk.CTkButton(fav_window, text="Save Favorites", command=self.save_favorites)
+        save_button.pack(pady=5)
+
+        close_button = ctk.CTkButton(fav_window, text="Close", command=fav_window.destroy)
+        close_button.pack(pady=5)
+
+    def copy_quote(self):
+        current_quote = self.quote_display.get("1.0", ctk.END).strip()
+        if not current_quote:
+            messagebox.showwarning("Warning", "No quote to copy.")
+            return
+        pyperclip.copy(current_quote)
+        messagebox.showinfo("Success", "Quote copied to clipboard!")
+
+    def update_history(self, quote):
+        # Remove any forward history
+        self.quote_history = self.quote_history[:self.history_index + 1]
+        self.quote_history.append(quote)
+        self.history_index += 1
+
+    def show_previous_quote(self):
+        if self.history_index > 0:
+            self.history_index -= 1
+            quote = self.quote_history[self.history_index]
+            self.display_quote(quote)
+
+    def show_next_quote(self):
+        if self.history_index < len(self.quote_history) - 1:
+            self.history_index += 1
+            quote = self.quote_history[self.history_index]
+            self.display_quote(quote)
+
+def main():
+    root = ctk.CTk()
+    app = QuoteGeneratorApp(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
